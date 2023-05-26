@@ -1,0 +1,151 @@
+USE [Project]
+GO
+
+SELECT *
+  FROM [dbo].[COVIDdeaths$]
+  order by 3, 4
+--select *
+--from [dbo].[COVIDvax$]
+--order by 3,4
+
+-- select data we are useing
+
+SELECT  location, date, total_cases, new_cases, total_deaths, population
+  FROM [dbo].[COVIDdeaths$]
+  order by 1,2
+
+  -- looking at total cases vs totla deaths
+
+
+SELECT  location, date, total_cases, total_deaths, (cast(total_deaths as decimal)/cast(total_cases as decimal))*100 as DeathPercent 
+  FROM [dbo].[COVIDdeaths$]
+  --where location like '%states%'
+  order by 1,2
+
+  -- looking at total cases vs pop
+SELECT  location, date, total_cases, population, (cast(total_cases as decimal)/cast(population as decimal))*100 as DeathPercent 
+  FROM [dbo].[COVIDdeaths$]
+  order by 1,2
+
+  -- max of above
+
+SELECT  location,population,date, max(cast(total_cases as int)) as HighestInfectionCount,  max(cast(total_cases as decimal)/cast(population as decimal))*100 as Infectedpercent
+  FROM [dbo].[COVIDdeaths$]
+  where continent is null
+  and location IN ('World', 'European Union','Lower middle income','Low income', 'International','High income', 'Upper middle income')
+  group by location, population, date
+  order by Infectedpercent desc
+
+  -- countery with highest death count per pop
+
+ SELECT  location, max(cast(total_deaths as int)) as total_death_count
+  FROM [dbo].[COVIDdeaths$]
+  where continent is not null
+  group by location
+  order by total_death_count desc
+
+  -- full numbers of data by continenet kinda confuseing but for some reason the data put the total sum of data by continent in location with a null continent
+
+ SELECT  location, max(cast(total_deaths as int)) as total_death_count
+  FROM [dbo].[COVIDdeaths$]
+  where continent is  null
+  and location not in ('World', 'European Union','Lower middle income','Low income', 'International','High income', 'Upper middle income')
+  group by location
+  order by total_death_count desc
+
+
+ -- below is incorrect version but just grouped data by continent
+
+  --SELECT  continent, max(cast(total_deaths as int)) as total_death_count
+  --FROM [dbo].[COVIDdeaths$]
+  --where continent is not null
+  --group by continent
+  --order by total_death_count desc
+
+  -- global nuumbers
+
+SELECT sum(new_cases) as Total_Cases, sum(cast(new_deaths as int)) as Total_deaths, sum(cast(new_deaths as decimal))/nullif(sum(cast(new_cases as decimal)), 0) as DeathPercent
+  FROM [dbo].[COVIDdeaths$]
+  where continent is not null
+  --group by date
+  order by 1,2
+
+-- total pop vs vaccinations
+
+
+select dea.continent, dea.location , dea.date, dea.population, vac.new_vaccinations
+ FROM [dbo].[COVIDdeaths$] dea
+ join [dbo].[COVIDvax$] vac
+	on dea.location = vac.location
+	and dea.date = vac.date
+ where dea.continent is not null
+ order by 2, 3
+
+ -- new
+
+ select dea.continent, dea.location , dea.date, dea.population, vac.new_vaccinations, sum(cast(vac.new_vaccinations as bigint)) over (partition by dea.location order by dea.location, dea.date) as rolling_vax
+ FROM [dbo].[COVIDdeaths$] dea
+ join [dbo].[COVIDvax$] vac
+	on dea.location = vac.location
+	and dea.date = vac.date
+ where dea.continent is not null
+ order by 2, 3
+
+ -- use cte
+
+ with PopVSvac (continet, location, date, population, new_vaccinations, rolling_vax)
+ as
+ (
+ select dea.continent, dea.location , dea.date, dea.population, vac.new_vaccinations, sum(cast(vac.new_vaccinations as bigint)) over (partition by dea.location order by dea.location, dea.date) as rolling_vax
+ FROM [dbo].[COVIDdeaths$] dea
+ join [dbo].[COVIDvax$] vac
+	on dea.location = vac.location
+	and dea.date = vac.date
+ where dea.continent is not null
+
+ )
+select * , (rolling_vax/ population)*100
+from PopVSvac
+order by 2,3
+
+-- temp table
+
+drop table if exists #PercentPopVax
+create table #PercentPopVax
+(
+continent nvarchar(255),
+location nvarchar(255),
+date datetime,
+population numeric,
+new_vaccination numeric,
+rolling_vax numeric
+)
+insert into #PercentPopVax
+select dea.continent, dea.location , dea.date, dea.population, vac.new_vaccinations, sum(cast(vac.new_vaccinations as bigint)) over (partition by dea.location order by dea.location, dea.date) as rolling_vax
+ FROM [dbo].[COVIDdeaths$] dea
+ join [dbo].[COVIDvax$] vac
+	on dea.location = vac.location
+	and dea.date = vac.date
+ where dea.continent is not null
+
+ select * , (rolling_vax/ population)*100
+from #PercentPopVax
+
+
+-- re ran below mutiple times with diffrent code to make many views
+
+USE [Project]
+GO
+/****** Object:  View [dbo].[percent_pop_vacc]    Script Date: 5/4/2023 4:07:09 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ create view [dbo].[total_death_count_regional_COVID_v2] as
+  SELECT  continent, max(cast(total_deaths as int)) as total_death_count
+  FROM [dbo].[COVIDdeaths$]
+  where continent is not null
+  group by continent
+  --order by total_death_count desc
